@@ -1,7 +1,19 @@
 
 local M = {}
 local ffi = require("ffi")
-local pa = ffi.load("libportaudio-2")
+local pa
+
+do
+  local names = { "libportaudio-2", "libportaudio" }
+  for i = 1,#names do
+    local good, value = pcall(function() return ffi.load(names[i]) end)
+    if good then
+      pa = value
+      break
+    end
+  end
+end
+assert(pa, "libportaudio could not be found.")
 
 ffi.cdef [[
 int Pa_GetVersion( void );
@@ -320,14 +332,8 @@ local function callback(sampleRate, framesPerBuffer, numChannels, audiofun, wait
   local function callback(inputBuff, outputBuff, size, timeInfo, flags, udata)
     local inp = ffi.cast("float*", inputBuff)
     local out = ffi.cast("float*", outputBuff)
-    audiofun(inp, out, size, numChannels)
+    audiofun(inp, out, tonumber(size), numChannels)
     return 0
-  end
-
-  local function die()
-    checkError(pa.Pa_StopStream(stream[0]), pa.Pa_Terminate)
-    checkError(pa.Pa_CloseStream(stream[0]), pa.Pa_Terminate)
-    pa.Pa_Terminate()
   end
 
   checkError(pa.Pa_Initialize())
@@ -338,6 +344,12 @@ local function callback(sampleRate, framesPerBuffer, numChannels, audiofun, wait
     pa.paClipOff, pa.paDitherOff, pa.paPrimeOutputBuffersUsingStreamCallback)
 
   local stream = newStream()
+  local function die()
+    checkError(pa.Pa_StopStream(stream[0]), pa.Pa_Terminate)
+    checkError(pa.Pa_CloseStream(stream[0]), pa.Pa_Terminate)
+    pa.Pa_Terminate()
+  end
+  
   checkError(pa.Pa_OpenStream(stream, inpParams, outParams, sampleRate,
     framesPerBuffer, flags, callback, nil), die)
   checkError(pa.Pa_StartStream(stream[0]), die)
